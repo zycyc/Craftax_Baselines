@@ -2,6 +2,29 @@ import argparse
 import os
 import sys
 
+import subprocess
+import re
+# Set the environment variable early, even before importing JAX
+# parser = argparse.ArgumentParser(description='Set GPU device for training.')
+# parser.add_argument('--gpu', type=str, help='GPU index to use', default=None)
+# args = parser.parse_args()
+
+# if args.gpu is not None:
+#     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+#     print(f"Using GPU: {args.gpu}")
+# else:
+# Function to get least used GPU if none specified
+def get_least_used_gpu():
+    smi_output = subprocess.run(['nvidia-smi', '--query-gpu=index,memory.free', '--format=csv,nounits,noheader'], capture_output=True, text=True)
+    gpu_memory = [re.split(r',\s*', line.strip()) for line in smi_output.stdout.strip().split('\n')]
+    least_used_gpu = sorted(gpu_memory, key=lambda x: int(x[1]), reverse=True)[0][0]
+    return least_used_gpu
+
+least_used_gpu = get_least_used_gpu()
+print(f"Didn't specify devices, using least used GPU: {least_used_gpu}")
+os.environ['CUDA_VISIBLE_DEVICES'] = least_used_gpu
+
+
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
