@@ -1,9 +1,10 @@
 from chex import Array, ArrayTree
 import numpy as np
 
-from gym import spaces
+from gymnasium import spaces
 
 from dreamerv3_flax.env import VecCrafterEnv
+from dreamerv3_flax.craftax import CraftaxWrapper
 
 
 class ReplayBuffer:
@@ -11,7 +12,7 @@ class ReplayBuffer:
 
     def __init__(
         self,
-        env: VecCrafterEnv,
+        env: CraftaxWrapper,
         batch_size: int = 16,
         num_steps: int = 64,
         buffer_size: int = int(1e6),
@@ -19,7 +20,7 @@ class ReplayBuffer:
         """Initializes a replay buffer."""
         # Environment
         num_envs = env.num_envs
-        obs_space = env.single_observation_space
+        obs_space = env.single_observation_space["rgb"]
         action_space = env.single_action_space
         assert isinstance(obs_space, spaces.Box)
         assert isinstance(action_space, spaces.Discrete)

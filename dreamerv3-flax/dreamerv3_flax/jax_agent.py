@@ -8,10 +8,11 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 
-from gym import spaces
+from gymnasium import spaces
 
 from dreamerv3_flax.agent import Agent
 from dreamerv3_flax.env import VecCrafterEnv
+from dreamerv3_flax.craftax import CraftaxWrapper
 from dreamerv3_flax.optax_util import adam_clip, TrainState
 
 
@@ -20,14 +21,14 @@ class JAXAgent:
 
     def __init__(
         self,
-        env: VecCrafterEnv,
+        env: CraftaxWrapper,
         seed: int = 0,
         model_opt_kwargs: Dict = FrozenDict(lr=1e-4, max_norm=1000.0),
         policy_opt_kwargs: Dict = FrozenDict(lr=3e-5, max_norm=100.0),
     ):
         """Initializes an agent."""
         # Environment
-        obs_space = env.single_observation_space
+        obs_space = env.single_observation_space["rgb"]
         action_space = env.single_action_space
         assert isinstance(obs_space, spaces.Box)
         assert isinstance(action_space, spaces.Discrete)

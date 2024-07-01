@@ -78,8 +78,8 @@ class Dense(BaseLayer):
 class Conv(BaseLayer):
     """Convolutional layer module."""
 
-    kernel_size: Sequence[int] = (4, 4)
-    strides: Sequence[int] = (2, 2)
+    kernel_size: Sequence[int] = (7, 7)
+    strides: Sequence[int] = (7, 7)
 
     def setup(self):
         """Initializes a convolutional layer."""
@@ -97,8 +97,8 @@ class Conv(BaseLayer):
 class ConvTranspose(BaseLayer):
     """Transposed convolutional layer module."""
 
-    kernel_size: Sequence[int] = (4, 4)
-    strides: Sequence[int] = (2, 2)
+    kernel_size: Sequence[int] = (7, 7)
+    strides: Sequence[int] = (7, 7)
 
     def setup(self):
         """Initializes a transposed convolutional layer."""
