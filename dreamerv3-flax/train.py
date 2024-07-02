@@ -91,6 +91,8 @@ def main(config):
     # Reset
     actions = envs.action_space.sample()
     obs, info = envs.reset()
+    print("before first step")
+    breakpoint()
     obs, rewards, terminateds, truncateds, infos = envs.step(actions)
     # obs["rgb"].shape = (4, 63, 63, 3)
     # rewards.shape = (4,)
@@ -117,38 +119,41 @@ def main(config):
         dones = jnp.array([terminated or truncated for terminated, truncated in zip(terminateds, truncateds)])
         
         # breakpoint if there any true in truncateds or terminateds
-        # if True in truncateds or True in terminateds:
-        #     print("Breakpoint because of truncateds or terminateds")
-        #     breakpoint()
+        if True in truncateds or True in terminateds:
+            print("Breakpoint because of truncateds or terminateds")
+            breakpoint()
+            metric = jax.tree.map(lambda x: (x * infos["returned_episode"]).sum() / infos["returned_episode"].sum(), infos)
+            print(metric)
             
-        for done, info in zip(dones, infos):
-            # print("breakpoint zip")
-            # breakpoint()
-            if done:
-                rollout_metric = {
-                    "episode_return": info["returned_episode_returns"].item(),
-                    "episode_length": info["returned_episode_lengths"].item(),
-                    "time_step": info["timestep"].item(),
-                }
-                print("rollout_metric when done: ", rollout_metric)
-                # print("breakpoint because of done")
-                # breakpoint()
-                # logger.log(rollout_metric, step)
-                # achievements.append(info["achievements"])
-                # eval_metric = get_eval_metric(achievements)
-                # print("eval_metric when done: ", eval_metric)
-                # logger.log(eval_metric, step)
+        # for done, info in zip(dones, infos):
+        #     # print("breakpoint zip")
+        #     # breakpoint()
+        #     if done:
+        #         rollout_metric = {
+        #             "episode_return": info["returned_episode_returns"].item(),
+        #             "episode_length": info["returned_episode_lengths"].item(),
+        #             "time_step": info["timestep"].item(),
+        #         }
+        #         print("rollout_metric when done: ", rollout_metric)
+        #         # print("breakpoint because of done")
+        #         # breakpoint()
+        #         # logger.log(rollout_metric, step)
+        #         # achievements.append(info["achievements"])
+        #         # eval_metric = get_eval_metric(achievements)
+        #         # print("eval_metric when done: ", eval_metric)
+        #         # logger.log(eval_metric, step)
         
-                # Add an indented block here
-                # Example:
-                # if eval_metric["score"] > 0.8:
-                #     print("High score!")
+        #         # Add an indented block here
+        #         # Example:
+        #         # if eval_metric["score"] > 0.8:
+        #         #     print("High score!")
 
         if step >= 1024 and step % 2 == 0:
             data = buffer.sample()
             _, train_metric = agent.train(data)
             if step % 100 == 0:
                 print("Step:", step, "train_metric:", train_metric)
+                print(infos)
                 # print("breakpoint because of step % 100 == 0")
                 # breakpoint()
                 # logger.log(train_metric, step)
