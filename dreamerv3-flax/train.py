@@ -117,21 +117,26 @@ def main(config):
         dones = jnp.array([terminated or truncated for terminated, truncated in zip(terminateds, truncateds)])
         
         # breakpoint if there any true in truncateds or terminateds
-        if True in truncateds or True in terminateds:
-            print("Breakpoint because of truncateds or terminateds")
-            breakpoint()
+        # if True in truncateds or True in terminateds:
+        #     print("Breakpoint because of truncateds or terminateds")
+        #     breakpoint()
             
         for done, info in zip(dones, infos):
+            # print("breakpoint zip")
+            # breakpoint()
             if done:
                 rollout_metric = {
-                    "episode_return": info["episode_return"],
-                    "episode_length": info["episode_length"],
+                    "episode_return": info["returned_episode_returns"].item(),
+                    "episode_length": info["returned_episode_lengths"].item(),
+                    "time_step": info["timestep"].item(),
                 }
-                print("breakpoint because of done")
-                breakpoint()
+                print("rollout_metric when done: ", rollout_metric)
+                # print("breakpoint because of done")
+                # breakpoint()
                 # logger.log(rollout_metric, step)
-                achievements.append(info["achievements"])
-                eval_metric = get_eval_metric(achievements)
+                # achievements.append(info["achievements"])
+                # eval_metric = get_eval_metric(achievements)
+                # print("eval_metric when done: ", eval_metric)
                 # logger.log(eval_metric, step)
         
                 # Add an indented block here
@@ -143,8 +148,9 @@ def main(config):
             data = buffer.sample()
             _, train_metric = agent.train(data)
             if step % 100 == 0:
-                print("breakpoint because of step % 100 == 0")
-                breakpoint()
+                print("Step:", step, "train_metric:", train_metric)
+                # print("breakpoint because of step % 100 == 0")
+                # breakpoint()
                 # logger.log(train_metric, step)
 
 

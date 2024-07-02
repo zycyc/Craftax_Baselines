@@ -30,7 +30,8 @@ import craftax
 from typing import Any
 import chex
 import jax.random as jrng
-
+from dataclasses import asdict
+from wrappers import LogWrapper
 
 @dataclass
 class MegaState:
@@ -38,6 +39,7 @@ class MegaState:
     observation: jnp.ndarray
     terminal: bool
     reward: jnp.ndarray
+    info: dict
 
     # Need this to make the state subscriptable
     @property
@@ -79,6 +81,7 @@ class CraftaxFuncEnv(FuncEnv):
     def __init__(self):
         super().__init__()
         self.env = make_craftax_env_from_name("Craftax-Classic-Pixels-v1", auto_reset=True)
+        self.env = LogWrapper(self.env)
         params = self.env.default_params
         self.observation_space = spaces.Dict({"rgb": spaces.Box(0, 255, self.env.observation_space(params).shape, dtype=jnp.uint8)})
         self.action_space = spaces.Discrete(17)
@@ -87,12 +90,12 @@ class CraftaxFuncEnv(FuncEnv):
     def initial(self, rng):
         obs, state = self.env.reset(rng)
         obs = {"rgb": obs}
-        return MegaState(state, obs, False, jnp.array(0.0))
+        return MegaState(state, obs, False, jnp.array(0.0), {})
 
     def transition(self, state, action, rng):
-        obs, env_state, reward, done, _ = self.env.step(rng, state.craftax_state, action, self.params)
+        obs, env_state, reward, done, info = self.env.step(rng, state.craftax_state, action, self.params)
         obs = {"rgb": obs}
-        return MegaState(env_state, obs, done, reward)
+        return MegaState(env_state, obs, done, reward, info)
 
     def observation(self, state):
         return state.observation # To conform to the gymnasium wrapper api
@@ -103,16 +106,23 @@ class CraftaxFuncEnv(FuncEnv):
     def terminal(self, state):
         return state.terminal
     
-    def state_info(self, state: Any, params: Any | None = None) -> MegaState:
-        # put everything in MegaState into info
-        print("breakpoint because of state_info")
-        breakpoint()
-        return state
+    def state_info(self, state: Any, params: Any | None = None) -> dict:
+        infos = []
+        for env_id in range(state.reward.val.shape[0]):
+            info = {}
+            for key, value in state.info.items():
+                info[key] = value[env_id]
+            infos.append(info)
+        return infos
     
-    def transition_info(self, state, action, next_state, params: Any | None = None) -> MegaState:
-        print("breakpoint because of transition_info")
-        breakpoint()
-        return state
+    def transition_info(self, state, action, next_state, params: Any | None = None) -> dict:
+        infos = []
+        for env_id in range(state.reward.shape[0]):
+            info = {}
+            for key, value in state.info.items():
+                info[key] = value[env_id]
+            infos.append(info)
+        return infos
 
 
 class CraftaxWrapper(FunctionalJaxVectorEnv):
