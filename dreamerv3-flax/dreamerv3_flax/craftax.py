@@ -26,7 +26,7 @@ from gymnasium import spaces
 import jax
 import jax.numpy as jnp
 from dataclasses import dataclass
-import craftax
+import craftax.craftax_classic.envs.craftax_state
 from typing import Any, TypeVar
 import chex
 import jax.random as jrng
@@ -86,18 +86,20 @@ class CraftaxFuncEnv(FuncEnv):
         self.env = make_craftax_env_from_name("Craftax-Classic-Pixels-v1", auto_reset=True)
         # self.env = LogWrapper(self.env)
         params = self.env.default_params
-        self.observation_space = spaces.Dict({"rgb": spaces.Box(0, 255, self.env.observation_space(params).shape, dtype=jnp.uint8)})
+        # breakpoint()
+        # self.observation_space = spaces.Dict({"rgb": spaces.Box(0, 255, self.env.observation_space(params).shape, dtype=jnp.uint8)}) # 63, 63, 3
+        self.observation_space = spaces.Dict({"rgb": spaces.Box(0, 255, (64, 64, 3), dtype=jnp.uint8)})
         self.action_space = spaces.Discrete(17)
         self.params = params
     
     def initial(self, rng):
         obs, state = self.env.reset(rng)
-        obs = {"rgb": obs}
+        obs = {"rgb": jax.image.resize(obs, shape=(64, 64, 3), method="nearest")}
         return MegaState(state, obs, False, jnp.array(0.0))
 
     def transition(self, state, action, rng):
         obs, env_state, reward, done, info = self.env.step(rng, state.craftax_state, action, self.params)
-        obs = {"rgb": obs}
+        obs = {"rgb": jax.image.resize(obs, shape=(64, 64, 3), method="nearest")}
         return MegaState(env_state, obs, done, reward), info
 
     def observation(self, state):

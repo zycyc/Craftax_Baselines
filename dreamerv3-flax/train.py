@@ -1,65 +1,32 @@
 import argparse
-import subprocess
-import re
 import os
-# Set the environment variable early, even before importing JAX
-parser = argparse.ArgumentParser(description='Set GPU device for training.')
-parser.add_argument('--gpu', type=str, help='GPU index to use', default=None)
-args = parser.parse_args()
-
-if args.gpu is not None:
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    print(f"Using GPU: {args.gpu}")
-else:
-    # Function to get least used GPU if none specified
-    def get_least_used_gpu():
-        smi_output = subprocess.run(['nvidia-smi', '--query-gpu=index,memory.free', '--format=csv,nounits,noheader'], capture_output=True, text=True)
-        gpu_memory = [re.split(r',\s*', line.strip()) for line in smi_output.stdout.strip().split('\n')]
-        least_used_gpu = sorted(gpu_memory, key=lambda x: int(x[1]), reverse=True)[0][0]
-        return least_used_gpu
-
-    least_used_gpu = get_least_used_gpu()
-    print(f"Didn't specify devices, using least used GPU: {least_used_gpu}")
-    os.environ['CUDA_VISIBLE_DEVICES'] = least_used_gpu
-
-
-import jax
+import glob
+import re
+import subprocess
+import numpy as np
 import jax.numpy as jnp
-import chex
-import flax
-import optax
+import wandb
+import dill as pickle  # Use dill instead of pickle
+import orbax
+import orbax.checkpoint
 from functools import partial
 from typing import Dict, Sequence
-import wandb
-from logz.batch_logging import create_log_dict, batch_log
-from craftax.craftax_env import make_craftax_env_from_name
-import flashbax as fbx
-from typing import Sequence, NamedTuple, Any
-
-import numpy as np
-
 from dreamerv3_flax.async_vector_env import AsyncVectorEnv
 from dreamerv3_flax.buffer import ReplayBuffer
 from dreamerv3_flax.env import CrafterEnv, VecCrafterEnv, TASKS
 from dreamerv3_flax.jax_agent import JAXAgent
-
 from dreamerv3_flax.craftax import CraftaxWrapper
+from flax.training import orbax_utils
 
-@chex.dataclass(frozen=True)
-class TimeStep:
-    obs: chex.Array
-    action: chex.Array
-    reward: chex.Array
-    done: chex.Array
-    
-class Transition(NamedTuple):
-    done: jnp.ndarray
-    action: jnp.ndarray
-    value: jnp.ndarray
-    reward: jnp.ndarray
-    log_prob: jnp.ndarray
-    obs: jnp.ndarray
-    info: jnp.ndarray
+def get_least_used_gpus(n=1):
+    smi_output = subprocess.run(['nvidia-smi', '--query-gpu=index,memory.free', '--format=csv,nounits,noheader'], capture_output=True, text=True)
+    gpu_memory = [re.split(r',\s*', line.strip()) for line in smi_output.stdout.strip().split('\n')]
+    least_used_gpus = sorted(gpu_memory, key=lambda x: int(x[1]), reverse=True)[:n]
+    return [gpu[0] for gpu in least_used_gpus]
+
+least_used_gpus = get_least_used_gpus(1)
+print(f"Didn't specify devices, using least used GPUs: {', '.join(least_used_gpus)}")
+os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(least_used_gpus)
 
 def get_eval_metric(achievements: Sequence[Dict]) -> float:
     achievements = [list(achievement.values()) for achievement in achievements]
@@ -71,8 +38,35 @@ def get_eval_metric(achievements: Sequence[Dict]) -> float:
     }
     return eval_metric
 
+def save_checkpoint(step: int, agent: JAXAgent, buffer: ReplayBuffer, achievements: Sequence[Dict]):
+    state_dict = {
+        'step': step,
+        'agent_model_state': agent.model_state,
+        'agent_policy_state': agent.policy_state,
+        'buffer': {'obs': buffer.obs, 'actions': buffer.actions, 'rewards': buffer.rewards, 'dones': buffer.dones, 'firsts': buffer.firsts, 'pos': buffer.pos, 'full': buffer.full},
+        'achievements': achievements
+    }
+    
+    checkpoint_path = f"/home/alan/Craftax_Baselines/dreamerv3-flax/dreamerv3_flax/ckpt_seed_{args.seed}_step_{step}"
+    save_args = orbax_utils.save_args_from_target(state_dict)
+    orbax_checkpointer.save(checkpoint_path, state_dict, save_args=save_args, force=True)
 
-def main(config):
+def load_latest_checkpoint(list_of_files, buffer: ReplayBuffer, agent: JAXAgent):
+    step = 0
+    achievements = []
+    buffer_dict = {'obs': np.zeros_like(buffer.obs), 'actions': np.zeros_like(buffer.actions), 'rewards': np.zeros_like(buffer.rewards), 'dones': np.zeros_like(buffer.dones), 'firsts': np.zeros_like(buffer.firsts), 'pos': 0, 'full': False}
+    target = {
+        'step': step,
+        'agent_model_state': agent.model_state,
+        'agent_policy_state': agent.policy_state,
+        'buffer': buffer_dict,
+        'achievements': achievements
+    }
+    latest_file = max(list_of_files, key=os.path.getctime)
+    print(f"Loading checkpoint from {latest_file}")
+    return orbax_checkpointer.restore(latest_file, item=target)
+
+def main(config, args):
 
     # Seed
     np.random.seed(0)
@@ -88,6 +82,33 @@ def main(config):
     # Agent
     agent = JAXAgent(envs, seed=0)
     state = agent.initial_state(1)
+    
+    search_pattern = f"/home/alan/Craftax_Baselines/dreamerv3-flax/dreamerv3_flax/ckpt_seed_{args.seed}_step_*"
+    list_of_files = glob.glob(search_pattern)
+    print("List of files: ", list_of_files)
+    if list_of_files and args.load_checkpoint:
+        print("Loading checkpoint from /home/alan/Craftax_Baselines/dreamerv3-flax/dreamerv3_flax/ckpt_seed_"+str(args.seed))
+        state_restored = load_latest_checkpoint(list_of_files, buffer, agent)
+        if state_restored:
+            step, agent.model_state, agent.policy_state, buffer_dict, achievements = (
+                state_restored['step'],
+                state_restored['agent_model_state'],
+                state_restored['agent_policy_state'],
+                state_restored['buffer'],
+                state_restored['achievements']
+            )
+            buffer.obs, buffer.actions, buffer.rewards, buffer.dones, buffer.firsts, buffer.pos, buffer.full = (
+                buffer_dict['obs'].copy(),
+                buffer_dict['actions'].copy(),
+                buffer_dict['rewards'].copy(),
+                buffer_dict['dones'].copy(),
+                buffer_dict['firsts'].copy(),
+                buffer_dict['pos'],
+                buffer_dict['full']
+            )
+    else:
+        step = 0
+        achievements = []
 
     # Reset
     actions = envs.action_space.sample()
@@ -103,8 +124,9 @@ def main(config):
 
     # Train
     achievements = []
-    for step in range(100000):
-        print("Step:", step)
+    for step in range(1000000):
+        if step % 1000 == 0:
+            print("Step: ", step)
         actions, state = agent.act(obs["rgb"], firsts, state)
         
         buffer.add(obs["rgb"], actions, rewards, dones, firsts)
@@ -120,66 +142,26 @@ def main(config):
         # breakpoint if there any true in truncateds or terminateds
         for i, done in enumerate(dones):
             if done and config["WANDB_MODE"] == "online":
-                wandb.log(jax.tree.map(lambda x: x[i], infos), step)
+                achievements.append({k.split('/')[1]: int(v[0]) for k, v in infos.items() if 'Achievements/' in k})
+                eval_metric = get_eval_metric(achievements)
+                wandb.log(eval_metric, step)
         
-        # if True in truncateds or True in terminateds:
-        #     print("done for at least one env")
-        #     breakpoint()
-        #     metric = jax.tree.map(lambda x: (x * infos["returned_episode"]).sum() / infos["returned_episode"].sum(), infos)
-        
-        #     if config["WANDB_MODE"] == "online":
-        #         wandb.log(metric, step)
-        #         # def callback(metric, update_step):
-        #         #     to_log = create_log_dict(metric, config)
-        #         #     batch_log(update_step, to_log, config)
-
-        #         # jax.debug.callback(callback, metric, step)
-        #     # report on wandb if required
-            
-        # for done, info in zip(dones, infos):
-        #     # print("breakpoint zip")
-        #     # breakpoint()
-        #     if done:
-        #         rollout_metric = {
-        #             "episode_return": info["returned_episode_returns"].item(),
-        #             "episode_length": info["returned_episode_lengths"].item(),
-        #             "time_step": info["timestep"].item(),
-        #         }
-        #         print("rollout_metric when done: ", rollout_metric)
-        #         # print("breakpoint because of done")
-        #         # breakpoint()
-        #         # logger.log(rollout_metric, step)
-        #         # achievements.append(info["achievements"])
-        #         # eval_metric = get_eval_metric(achievements)
-        #         # print("eval_metric when done: ", eval_metric)
-        #         # logger.log(eval_metric, step)
-        
-        #         # Add an indented block here
-        #         # Example:
-        #         # if eval_metric["score"] > 0.8:
-        #         #     print("High score!")
 
         if step >= 1024 and step % 2 == 0:
             data = buffer.sample()
             _, train_metric = agent.train(data)
             if step % 100 == 0 and config["WANDB_MODE"] == "online":
                 wandb.log(train_metric, step)
-                # jax.debug.callback(callback, train_metric, step)
-                # print("Step:", step, "train_metric:", train_metric)
-                # print(infos)
-                # print("breakpoint because of step % 100 == 0")
-                # breakpoint()
-                # logger.log(train_metric, step)
+                
+        if step % 100000 == 0 and step > 0:
+            print(f"Step: {step}", "saving checkpoint")
+            save_checkpoint(step, agent, buffer, achievements)
+            print("Checkpoint saved")
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("--exp_name", type=str, required=True)
-    # parser.add_argument("--timestamp", default=None, type=str)
-    # parser.add_argument("--seed", default=0, type=int)
-    # args = parser.parse_args()
     config = {
-        "NUM_ENVS": int(10),
+        "NUM_ENVS": int(1),
         "NUM_REPEATS": int(1),
         "BUFFER_SIZE": int(1e6),
         "BUFFER_BATCH_SIZE": int(128),
@@ -213,5 +195,15 @@ if __name__ == "__main__":
             + str(int(config["TOTAL_TIMESTEPS"] // 1e6))
             + "M",
         )
+        
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exp_name", type=str, required=True)
+    parser.add_argument("--timestamp", default=None, type=str)
+    parser.add_argument("--seed", default=0, type=int)
+    parser.add_argument("--load_checkpoint", default=False, action="store_true")
+    args = parser.parse_args()
+        
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
     
-    main(config)
+    
+    main(config, args)

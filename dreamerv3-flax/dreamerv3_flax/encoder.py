@@ -13,20 +13,20 @@ class CNNEncoder(nn.Module):
 
     in_shape: Sequence[int]
     chan: int = 96
-    min_res: int = 9
+    min_res: int = 4
     act_type: str = "silu"
     norm_type: str = "layer"
 
     def setup(self):
         """Initializes an encoder."""
         # Convolutional layers
-        num_layers = 1
+        num_layers = int(math.log2(self.in_shape[0] // self.min_res))
         out_chans = [2**i * self.chan for i in range(num_layers)]
         self.layers = [
             Conv(
                 out_chan,
-                kernel_size=(7, 7),
-                strides=(7, 7),
+                kernel_size=(4, 4),
+                strides=(2, 2),
                 act_type=self.act_type,
                 norm_type=self.norm_type,
             )
