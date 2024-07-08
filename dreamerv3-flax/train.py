@@ -31,6 +31,7 @@ import optax
 from functools import partial
 from typing import Dict, Sequence
 import wandb
+from logz.batch_logging import create_log_dict, batch_log
 from craftax.craftax_env import make_craftax_env_from_name
 import flashbax as fbx
 from typing import Sequence, NamedTuple, Any
@@ -91,8 +92,6 @@ def main(config):
     # Reset
     actions = envs.action_space.sample()
     obs, info = envs.reset()
-    print("before first step")
-    breakpoint()
     obs, rewards, terminateds, truncateds, infos = envs.step(actions)
     # obs["rgb"].shape = (4, 63, 63, 3)
     # rewards.shape = (4,)
@@ -104,7 +103,7 @@ def main(config):
 
     # Train
     achievements = []
-    for step in range(1000000):
+    for step in range(100000):
         print("Step:", step)
         actions, state = agent.act(obs["rgb"], firsts, state)
         
@@ -119,11 +118,23 @@ def main(config):
         dones = jnp.array([terminated or truncated for terminated, truncated in zip(terminateds, truncateds)])
         
         # breakpoint if there any true in truncateds or terminateds
-        if True in truncateds or True in terminateds:
-            print("Breakpoint because of truncateds or terminateds")
-            breakpoint()
-            metric = jax.tree.map(lambda x: (x * infos["returned_episode"]).sum() / infos["returned_episode"].sum(), infos)
-            print(metric)
+        for i, done in enumerate(dones):
+            if done and config["WANDB_MODE"] == "online":
+                wandb.log(jax.tree.map(lambda x: x[i], infos), step)
+        
+        # if True in truncateds or True in terminateds:
+        #     print("done for at least one env")
+        #     breakpoint()
+        #     metric = jax.tree.map(lambda x: (x * infos["returned_episode"]).sum() / infos["returned_episode"].sum(), infos)
+        
+        #     if config["WANDB_MODE"] == "online":
+        #         wandb.log(metric, step)
+        #         # def callback(metric, update_step):
+        #         #     to_log = create_log_dict(metric, config)
+        #         #     batch_log(update_step, to_log, config)
+
+        #         # jax.debug.callback(callback, metric, step)
+        #     # report on wandb if required
             
         # for done, info in zip(dones, infos):
         #     # print("breakpoint zip")
@@ -151,9 +162,11 @@ def main(config):
         if step >= 1024 and step % 2 == 0:
             data = buffer.sample()
             _, train_metric = agent.train(data)
-            if step % 100 == 0:
-                print("Step:", step, "train_metric:", train_metric)
-                print(infos)
+            if step % 100 == 0 and config["WANDB_MODE"] == "online":
+                wandb.log(train_metric, step)
+                # jax.debug.callback(callback, train_metric, step)
+                # print("Step:", step, "train_metric:", train_metric)
+                # print(infos)
                 # print("breakpoint because of step % 100 == 0")
                 # breakpoint()
                 # logger.log(train_metric, step)
@@ -167,6 +180,7 @@ if __name__ == "__main__":
     # args = parser.parse_args()
     config = {
         "NUM_ENVS": int(10),
+        "NUM_REPEATS": int(1),
         "BUFFER_SIZE": int(1e6),
         "BUFFER_BATCH_SIZE": int(128),
         "TOTAL_TIMESTEPS": 5e5,
@@ -187,6 +201,17 @@ if __name__ == "__main__":
         "WANDB_MODE": "online",  # set to online to activate wandb
         "ENTITY": "",
         "PROJECT": "dreamerv3_flax_craftax",
+        "DEBUG": False,
     }
+    
+    if config["WANDB_MODE"] == "online":
+        wandb.init(
+            project=config["PROJECT"],
+            config=config,
+            name=config["ENV_NAME"]
+            + "-dreamer_v3_flax-"
+            + str(int(config["TOTAL_TIMESTEPS"] // 1e6))
+            + "M",
+        )
     
     main(config)

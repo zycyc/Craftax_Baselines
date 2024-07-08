@@ -84,7 +84,7 @@ class CraftaxFuncEnv(FuncEnv):
     def __init__(self):
         super().__init__()
         self.env = make_craftax_env_from_name("Craftax-Classic-Pixels-v1", auto_reset=True)
-        self.env = LogWrapper(self.env)
+        # self.env = LogWrapper(self.env)
         params = self.env.default_params
         self.observation_space = spaces.Dict({"rgb": spaces.Box(0, 255, self.env.observation_space(params).shape, dtype=jnp.uint8)})
         self.action_space = spaces.Discrete(17)
@@ -93,8 +93,6 @@ class CraftaxFuncEnv(FuncEnv):
     def initial(self, rng):
         obs, state = self.env.reset(rng)
         obs = {"rgb": obs}
-        # print("in initial")
-        # breakpoint()
         return MegaState(state, obs, False, jnp.array(0.0))
 
     def transition(self, state, action, rng):
