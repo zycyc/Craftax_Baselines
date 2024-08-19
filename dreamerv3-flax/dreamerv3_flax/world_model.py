@@ -149,8 +149,9 @@ class WorldModel(nn.Module):
     def obs_loss(self, latent: Dist, obs: Array) -> Array:
         """Calculates the observation loss."""
         obs_dist = self.decoder(latent)
+        decoded_obs = obs_dist.mode()
         obs_loss = -obs_dist.log_prob(obs)
-        return obs_loss
+        return obs_loss, decoded_obs
 
     def reward_loss(self, latent: Dist, reward: Array) -> Array:
         """Calculates the reward loss."""
@@ -180,7 +181,7 @@ class WorldModel(nn.Module):
             state = self.initial_state(batch_size)
 
         # Transform the observation.
-        obs = jnp.astype(obs, jnp.float32) / 255.0
+        # obs = jnp.astype(obs, jnp.float32) / 255.0
 
         # Run an observation.
         state, (post, prior) = self.observe(state, obs, action, first)
@@ -191,7 +192,7 @@ class WorldModel(nn.Module):
         # Calculate the individual loss.
         dyn_loss, post_ent = self.rssm.dyn_loss(post, prior)
         rep_loss, prior_ent = self.rssm.rep_loss(post, prior)
-        obs_loss = self.obs_loss(latent, obs)
+        obs_loss, decoded_obs = self.obs_loss(latent, obs)
         reward_loss = self.reward_loss(latent, reward)
         cont_loss = self.cont_loss(latent, cont)
         loss = {
@@ -219,4 +220,4 @@ class WorldModel(nn.Module):
             "prior_ent_hist": jnp.ravel(prior_ent),
         }
 
-        return model_loss, (post, state, model_metric)
+        return model_loss, (post, state, model_metric, decoded_obs)

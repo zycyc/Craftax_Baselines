@@ -172,7 +172,7 @@ class JAXAgent:
 
         grad_fn = model_state.dynamic_scale.value_and_grad(loss_fn, has_aux=True)
         dynamic_scale, finite, aux, grads = grad_fn(model_state.params)
-        _, (post, state, model_metric) = aux
+        _, (post, state, model_metric, decoded_obs) = aux
         new_model_state = model_state.apply_gradients(grads=grads)
 
         # Update the model state.
@@ -192,7 +192,7 @@ class JAXAgent:
             dynamic_scale=dynamic_scale,
         )
 
-        return model_state, (post, state, model_metric)
+        return model_state, (post, state, model_metric, decoded_obs)
 
     def train_model(self, data: ArrayTree, state: ArrayTree | None = None) -> ArrayTree:
         """Trains the model."""
@@ -203,7 +203,7 @@ class JAXAgent:
         # Train the model.
         post_key, prior_key, key = jax.random.split(key, 3)
         rngs = {"post": post_key, "prior": prior_key}
-        model_state, (post, state, model_metric) = self._train_model(
+        model_state, (post, state, model_metric, decoded_obs) = self._train_model(
             model_state,
             rngs,
             data,
@@ -214,7 +214,7 @@ class JAXAgent:
         self.model_state = model_state
         self.key = key
 
-        return post, state, model_metric
+        return post, state, model_metric, decoded_obs
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0,))
@@ -344,12 +344,13 @@ class JAXAgent:
     def train(self, data: ArrayTree, state: ArrayTree | None = None) -> ArrayTree:
         """Trains the agent."""
         # Train the agent.
-        post, state, model_metric = self.train_model(data, state=state)
-        traj = self.imagine(post, data)
-        policy_metric = self.train_policy(traj)
-        self.update_policy()
+        post, state, model_metric, decoded_obs = self.train_model(data, state=state)
+        # traj = self.imagine(post, data)
+        # policy_metric = self.train_policy(traj)
+        # self.update_policy()
 
-        # Define the train metric.
-        train_metric = {**model_metric, **policy_metric}
+        # # Define the train metric.
+        # train_metric = {**model_metric, **policy_metric}
+        train_metric = {**model_metric}
 
-        return state, train_metric
+        return state, train_metric, decoded_obs

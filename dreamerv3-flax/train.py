@@ -1,26 +1,41 @@
 import argparse
+from datetime import datetime
 import subprocess
 import re
 import os
+
+from matplotlib import pyplot as plt
+
 # Set the environment variable early, even before importing JAX
-parser = argparse.ArgumentParser(description='Set GPU device for training.')
-parser.add_argument('--gpu', type=str, help='GPU index to use', default=None)
+parser = argparse.ArgumentParser(description="Set GPU device for training.")
+parser.add_argument("--gpu", type=str, help="GPU index to use", default=None)
 args = parser.parse_args()
 
 if args.gpu is not None:
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     print(f"Using GPU: {args.gpu}")
 else:
     # Function to get least used GPU if none specified
     def get_least_used_gpu():
-        smi_output = subprocess.run(['nvidia-smi', '--query-gpu=index,memory.free', '--format=csv,nounits,noheader'], capture_output=True, text=True)
-        gpu_memory = [re.split(r',\s*', line.strip()) for line in smi_output.stdout.strip().split('\n')]
+        smi_output = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,memory.free",
+                "--format=csv,nounits,noheader",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        gpu_memory = [
+            re.split(r",\s*", line.strip())
+            for line in smi_output.stdout.strip().split("\n")
+        ]
         least_used_gpu = sorted(gpu_memory, key=lambda x: int(x[1]), reverse=True)[0][0]
         return least_used_gpu
 
     least_used_gpu = get_least_used_gpu()
     print(f"Didn't specify devices, using least used GPU: {least_used_gpu}")
-    os.environ['CUDA_VISIBLE_DEVICES'] = least_used_gpu
+    os.environ["CUDA_VISIBLE_DEVICES"] = least_used_gpu
 
 
 import jax
@@ -31,19 +46,21 @@ import optax
 from functools import partial
 from typing import Dict, Sequence
 import wandb
-from logz.batch_logging import create_log_dict, batch_log
+
+# from logz.batch_logging import create_log_dict, batch_log
 from craftax.craftax_env import make_craftax_env_from_name
-import flashbax as fbx
 from typing import Sequence, NamedTuple, Any
 
 import numpy as np
 
 from dreamerv3_flax.async_vector_env import AsyncVectorEnv
 from dreamerv3_flax.buffer import ReplayBuffer
-from dreamerv3_flax.env import CrafterEnv, VecCrafterEnv, TASKS
+
+# from dreamerv3_flax.env import CrafterEnv, VecCrafterEnv, TASKS
 from dreamerv3_flax.jax_agent import JAXAgent
 
 from dreamerv3_flax.craftax import CraftaxWrapper
+
 
 @chex.dataclass(frozen=True)
 class TimeStep:
@@ -51,7 +68,8 @@ class TimeStep:
     action: chex.Array
     reward: chex.Array
     done: chex.Array
-    
+
+
 class Transition(NamedTuple):
     done: jnp.ndarray
     action: jnp.ndarray
@@ -60,6 +78,7 @@ class Transition(NamedTuple):
     log_prob: jnp.ndarray
     obs: jnp.ndarray
     info: jnp.ndarray
+
 
 def get_eval_metric(achievements: Sequence[Dict]) -> float:
     achievements = [list(achievement.values()) for achievement in achievements]
@@ -73,7 +92,6 @@ def get_eval_metric(achievements: Sequence[Dict]) -> float:
 
 
 def main(config):
-
     # Seed
     np.random.seed(0)
 
@@ -97,45 +115,53 @@ def main(config):
     # rewards.shape = (4,)
     # terminateds.shape = (4,) # episode ends natuarally
     # truncateds.shape = (4,) # episode ends due to max episode length
-    
+
     firsts = jnp.array([True for _ in range(config["NUM_ENVS"])])
     dones = jnp.array([False for _ in range(config["NUM_ENVS"])])
 
     # Train
     achievements = []
+    fig1, axes1 = plt.subplots(16, 64, figsize=(64, 16))
+    fig2, axes2 = plt.subplots(16, 64, figsize=(64, 16))
+    plt.subplots_adjust(wspace=0, hspace=0)
     for step in range(100000):
-        print("Step:", step)
-        actions, state = agent.act(obs["rgb"], firsts, state)
-        
+        # print("Step:", step)
+        # actions, state = agent.act(obs["rgb"], firsts, state)
+        actions = envs.action_space.sample()
+        # breakpoint()
+
         buffer.add(obs["rgb"], actions, rewards, dones, firsts)
-        
+
         firsts = dones
 
-        actions = np.argmax(actions, axis=-1)
+        # actions = np.argmax(actions, axis=-1)
         obs, rewards, terminateds, truncateds, infos = envs.step(actions)
-        
+
         # if True in truncateds or True in terminateds, then set the corresponding element in dones to True
-        dones = jnp.array([terminated or truncated for terminated, truncated in zip(terminateds, truncateds)])
-        
+        dones = jnp.array(
+            [
+                terminated or truncated
+                for terminated, truncated in zip(terminateds, truncateds)
+            ]
+        )
+
         # breakpoint if there any true in truncateds or terminateds
         for i, done in enumerate(dones):
             if done and config["WANDB_MODE"] == "online":
                 wandb.log(jax.tree.map(lambda x: x[i], infos), step)
-        
+
         # if True in truncateds or True in terminateds:
-        #     print("done for at least one env")
-        #     breakpoint()
         #     metric = jax.tree.map(lambda x: (x * infos["returned_episode"]).sum() / infos["returned_episode"].sum(), infos)
-        
+
         #     if config["WANDB_MODE"] == "online":
         #         wandb.log(metric, step)
-        #         # def callback(metric, update_step):
-        #         #     to_log = create_log_dict(metric, config)
-        #         #     batch_log(update_step, to_log, config)
+        # def callback(metric, update_step):
+        #     to_log = create_log_dict(metric, config)
+        #     batch_log(update_step, to_log, config)
 
         #         # jax.debug.callback(callback, metric, step)
         #     # report on wandb if required
-            
+
         # for done, info in zip(dones, infos):
         #     # print("breakpoint zip")
         #     # breakpoint()
@@ -145,23 +171,23 @@ def main(config):
         #             "episode_length": info["returned_episode_lengths"].item(),
         #             "time_step": info["timestep"].item(),
         #         }
-        #         print("rollout_metric when done: ", rollout_metric)
+        #         # print("rollout_metric when done: ", rollout_metric)
         #         # print("breakpoint because of done")
         #         # breakpoint()
-        #         # logger.log(rollout_metric, step)
-        #         # achievements.append(info["achievements"])
-        #         # eval_metric = get_eval_metric(achievements)
+        #         wandb.log(rollout_metric, step)
+        #         achievements.append(info["achievements"])
+        #         eval_metric = get_eval_metric(achievements)
         #         # print("eval_metric when done: ", eval_metric)
-        #         # logger.log(eval_metric, step)
-        
-        #         # Add an indented block here
-        #         # Example:
-        #         # if eval_metric["score"] > 0.8:
-        #         #     print("High score!")
+        #         wandb.log(eval_metric, step)
+
+        # Add an indented block here
+        # Example:
+        # if eval_metric["score"] > 0.8:
+        #     print("High score!")
 
         if step >= 1024 and step % 2 == 0:
             data = buffer.sample()
-            _, train_metric = agent.train(data)
+            _, train_metric, decoded_obs = agent.train(data)
             if step % 100 == 0 and config["WANDB_MODE"] == "online":
                 wandb.log(train_metric, step)
                 # jax.debug.callback(callback, train_metric, step)
@@ -171,6 +197,36 @@ def main(config):
                 # breakpoint()
                 # logger.log(train_metric, step)
 
+            # plot the decoded and sampled observations at fixed intervals
+            if step % 1000 == 0:
+                sampled_obs = data["obs"]
+                mse_values = jnp.square(decoded_obs - sampled_obs).sum(
+                    axis=(2, 3, 4)
+                )  # Average over h, w, c dimensions
+
+                # Calculate average MSE for the first column
+                avg_mse_first_col = jnp.mean(
+                    mse_values[:, 0]
+                )  # Average over the first column
+                # Calculate average MSE for the remaining columns
+                avg_mse_rest_cols = jnp.mean(mse_values[:, 1:])
+                decoded_obs = (decoded_obs - jnp.min(decoded_obs)) / (
+                    jnp.max(decoded_obs) - jnp.min(decoded_obs)
+                )
+                # decoded_obs = decoded_obs
+                for row in range(16):
+                    for col in range(64):
+                        axes1[row, col].imshow(decoded_obs[row, col])
+                        axes1[row, col].axis("off")
+                        axes2[row, col].imshow(sampled_obs[row, col])
+                        axes2[row, col].axis("off")
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                fig1.savefig(f"decoded_obs_tmp.png")  # Save the other figure
+                fig2.savefig(f"sampled_obs_tmp.png")  # Save the other figure
+                print("step:", step, "sample & decoded obs saved")
+                print(f"Avg MSE for first column: {avg_mse_first_col}")
+                print(f"Avg MSE for the rest of the columns: {avg_mse_rest_cols}")
+
 
 if __name__ == "__main__":
     # parser = argparse.ArgumentParser()
@@ -179,7 +235,7 @@ if __name__ == "__main__":
     # parser.add_argument("--seed", default=0, type=int)
     # args = parser.parse_args()
     config = {
-        "NUM_ENVS": int(10),
+        "NUM_ENVS": int(1),
         "NUM_REPEATS": int(1),
         "BUFFER_SIZE": int(1e6),
         "BUFFER_BATCH_SIZE": int(128),
@@ -203,7 +259,7 @@ if __name__ == "__main__":
         "PROJECT": "dreamerv3_flax_craftax",
         "DEBUG": False,
     }
-    
+
     if config["WANDB_MODE"] == "online":
         wandb.init(
             project=config["PROJECT"],
@@ -213,5 +269,5 @@ if __name__ == "__main__":
             + str(int(config["TOTAL_TIMESTEPS"] // 1e6))
             + "M",
         )
-    
+
     main(config)
