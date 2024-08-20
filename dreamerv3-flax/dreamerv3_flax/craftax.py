@@ -95,18 +95,16 @@ class CraftaxFuncEnv(FuncEnv):
         # self.env = LogWrapper(self.env)
         params = self.env.default_params
         self.observation_space = spaces.Dict(
-            {
-                "rgb": spaces.Box(
-                    0, 255, self.env.observation_space(params).shape, dtype=jnp.uint8
-                )
-            }
+            {"rgb": spaces.Box(0, 255, (64, 64, 3), dtype=jnp.uint8)}
         )
         self.action_space = spaces.Discrete(17)
         self.params = params
 
     def initial(self, rng):
         obs, state = self.env.reset(rng)
+        obs = jnp.pad(obs, pad_width=((0, 1), (0, 1), (0, 0)))
         obs = {"rgb": obs}
+
         return MegaState(state, obs, False, jnp.array(0.0))
 
     def transition(self, state, action, rng):
@@ -114,6 +112,7 @@ class CraftaxFuncEnv(FuncEnv):
             rng, state.craftax_state, action, self.params
         )
         obs = jnp.array(obs * 255, dtype=jnp.uint8)
+        obs = jnp.pad(obs, pad_width=((0, 1), (0, 1), (0, 0)))
         obs = {"rgb": obs}
         return MegaState(env_state, obs, done, reward), info
 
@@ -149,7 +148,6 @@ class CraftaxFuncEnv(FuncEnv):
 
 class CraftaxWrapper(FunctionalJaxVectorEnv):
     def __init__(self, num_envs: int):
-
         craftax_env = CraftaxFuncEnv()
         metadata = {"jax": True}
         super().__init__(

@@ -124,17 +124,20 @@ def main(config):
     fig1, axes1 = plt.subplots(16, 64, figsize=(64, 16))
     fig2, axes2 = plt.subplots(16, 64, figsize=(64, 16))
     plt.subplots_adjust(wspace=0, hspace=0)
-    for step in range(100000):
+    # from tqdm import tqdm
+
+    # for step in tqdm(range(100000)):
+    for step in range(int(1e6)):
         # print("Step:", step)
-        # actions, state = agent.act(obs["rgb"], firsts, state)
-        actions = envs.action_space.sample()
+        actions, state = agent.act(obs["rgb"], firsts, state)
+        # actions = envs.action_space.sample()
         # breakpoint()
 
         buffer.add(obs["rgb"], actions, rewards, dones, firsts)
 
         firsts = dones
 
-        # actions = np.argmax(actions, axis=-1)
+        actions = np.argmax(actions, axis=-1)
         obs, rewards, terminateds, truncateds, infos = envs.step(actions)
 
         # if True in truncateds or True in terminateds, then set the corresponding element in dones to True
@@ -198,34 +201,34 @@ def main(config):
                 # logger.log(train_metric, step)
 
             # plot the decoded and sampled observations at fixed intervals
-            if step % 1000 == 0:
-                sampled_obs = data["obs"]
-                mse_values = jnp.square(decoded_obs - sampled_obs).sum(
-                    axis=(2, 3, 4)
-                )  # Average over h, w, c dimensions
+            # if step % 1000 == 0:
+            #     sampled_obs = data["obs"]
+            #     mse_values = jnp.square(decoded_obs - sampled_obs).sum(
+            #         axis=(2, 3, 4)
+            #     )  # Average over h, w, c dimensions
 
-                # Calculate average MSE for the first column
-                avg_mse_first_col = jnp.mean(
-                    mse_values[:, 0]
-                )  # Average over the first column
-                # Calculate average MSE for the remaining columns
-                avg_mse_rest_cols = jnp.mean(mse_values[:, 1:])
-                decoded_obs = (decoded_obs - jnp.min(decoded_obs)) / (
-                    jnp.max(decoded_obs) - jnp.min(decoded_obs)
-                )
-                # decoded_obs = decoded_obs
-                for row in range(16):
-                    for col in range(64):
-                        axes1[row, col].imshow(decoded_obs[row, col])
-                        axes1[row, col].axis("off")
-                        axes2[row, col].imshow(sampled_obs[row, col])
-                        axes2[row, col].axis("off")
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                fig1.savefig(f"decoded_obs_tmp.png")  # Save the other figure
-                fig2.savefig(f"sampled_obs_tmp.png")  # Save the other figure
-                print("step:", step, "sample & decoded obs saved")
-                print(f"Avg MSE for first column: {avg_mse_first_col}")
-                print(f"Avg MSE for the rest of the columns: {avg_mse_rest_cols}")
+            #     # Calculate average MSE for the first column
+            #     avg_mse_first_col = jnp.mean(
+            #         mse_values[:, 0]
+            #     )  # Average over the first column
+            #     # Calculate average MSE for the remaining columns
+            #     avg_mse_rest_cols = jnp.mean(mse_values[:, 1:])
+            #     decoded_obs = (decoded_obs - jnp.min(decoded_obs)) / (
+            #         jnp.max(decoded_obs) - jnp.min(decoded_obs)
+            #     )
+            #     # decoded_obs = decoded_obs
+            #     for row in range(16):
+            #         for col in range(64):
+            #             axes1[row, col].imshow(decoded_obs[row, col])
+            #             axes1[row, col].axis("off")
+            #             axes2[row, col].imshow(sampled_obs[row, col])
+            #             axes2[row, col].axis("off")
+            #     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            #     fig1.savefig(f"decoded_obs_tmp.png")  # Save the other figure
+            #     fig2.savefig(f"sampled_obs_tmp.png")  # Save the other figure
+            #     print("step:", step, "sample & decoded obs saved")
+            #     print(f"Avg MSE for first column: {avg_mse_first_col}")
+            #     print(f"Avg MSE for the rest of the columns: {avg_mse_rest_cols}")
 
 
 if __name__ == "__main__":

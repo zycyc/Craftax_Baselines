@@ -345,12 +345,12 @@ class JAXAgent:
         """Trains the agent."""
         # Train the agent.
         post, state, model_metric, decoded_obs = self.train_model(data, state=state)
-        # traj = self.imagine(post, data)
-        # policy_metric = self.train_policy(traj)
-        # self.update_policy()
+        traj = self.imagine(post, data)
+        policy_metric = self.train_policy(traj)
+        self.update_policy()
 
         # # Define the train metric.
-        # train_metric = {**model_metric, **policy_metric}
-        train_metric = {**model_metric}
+        train_metric = {**model_metric, **policy_metric}
+        # train_metric = {**model_metric}
 
         return state, train_metric, decoded_obs

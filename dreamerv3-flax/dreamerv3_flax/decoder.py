@@ -15,14 +15,14 @@ class CNNDecoder(nn.Module):
 
     out_shape: Sequence[int]
     chan: int = 96
-    min_res: int = 9
+    min_res: int = 4
     act_type: str = "silu"
     norm_type: str = "layer"
 
     def setup(self):
         """Initializes a decoder."""
         # Linear layer
-        num_layers = 1
+        num_layers = int(math.log2(self.out_shape[0] // self.min_res))
         in_chan = 2 ** (num_layers - 1) * self.chan
         self.in_shape = (self.min_res, self.min_res, in_chan)
         self.linear = Dense(
@@ -41,8 +41,8 @@ class CNNDecoder(nn.Module):
         self.layers = [
             ConvTranspose(
                 out_chan,
-                kernel_size=(7, 7),
-                strides=(7, 7),
+                kernel_size=(4, 4),
+                strides=(2, 2),
                 act_type=act_type,
                 norm_type=norm_type,
             )

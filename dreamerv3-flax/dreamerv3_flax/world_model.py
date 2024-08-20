@@ -19,7 +19,7 @@ class WorldModel(nn.Module):
     num_actions: int
     encoder_kwargs: Dict = FrozenDict(
         chan=96,
-        min_res=9,
+        min_res=4,
         act_type="silu",
         norm_type="layer",
     )
@@ -34,7 +34,7 @@ class WorldModel(nn.Module):
     )
     decoder_kwargs: Dict = FrozenDict(
         chan=96,
-        min_res=9,
+        min_res=4,
         act_type="silu",
         norm_type="layer",
     )
