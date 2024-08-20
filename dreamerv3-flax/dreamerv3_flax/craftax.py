@@ -32,7 +32,7 @@ import chex
 import jax.random as jrng
 from dataclasses import asdict
 
-# from wrappers import LogWrapper
+from dreamerv3_flax.wrappers import LogWrapper
 
 ActType = TypeVar("ActType")
 
@@ -92,7 +92,7 @@ class CraftaxFuncEnv(FuncEnv):
         self.env = make_craftax_env_from_name(
             "Craftax-Classic-Pixels-v1", auto_reset=True
         )
-        # self.env = LogWrapper(self.env)
+        self.env = LogWrapper(self.env)
         params = self.env.default_params
         self.observation_space = spaces.Dict(
             {"rgb": spaces.Box(0, 255, (64, 64, 3), dtype=jnp.uint8)}
@@ -153,7 +153,7 @@ class CraftaxWrapper(FunctionalJaxVectorEnv):
         super().__init__(
             craftax_env,
             num_envs,
-            max_episode_steps=200,
+            max_episode_steps=10000,
             metadata=metadata,
             render_mode="rgb",
         )
@@ -202,4 +202,4 @@ class CraftaxWrapper(FunctionalJaxVectorEnv):
 
         self.state = next_state
 
-        return observation, reward, terminated, truncated, info
+        return observation, reward, terminated, truncated, done, info

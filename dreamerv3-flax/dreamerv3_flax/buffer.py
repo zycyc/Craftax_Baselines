@@ -86,9 +86,7 @@ class ReplayBuffer:
         for pos_idx, env_idx in zip(pos_indices, env_indices):
             step = np.arange(pos_idx, pos_idx + self.num_steps)
             step %= self.buffer_size
-            obs_batch.append(
-                jnp.array(self.obs[step, env_idx] / 255.0, dtype=jnp.float32)
-            )
+            obs_batch.append(self.obs[step, env_idx])
             action_batch.append(self.actions[step, env_idx])
             reward_batch.append(self.rewards[step, env_idx])
             done_batch.append(self.dones[step, env_idx])

@@ -181,7 +181,7 @@ class WorldModel(nn.Module):
             state = self.initial_state(batch_size)
 
         # Transform the observation.
-        # obs = jnp.astype(obs, jnp.float32) / 255.0
+        obs = jnp.astype(obs, jnp.float32) / 255.0
 
         # Run an observation.
         state, (post, prior) = self.observe(state, obs, action, first)

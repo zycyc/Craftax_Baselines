@@ -108,7 +108,7 @@ def save_checkpoint(
         "achievements": achievements,
     }
 
-    checkpoint_path = f"/home/alan/Craftax_Baselines/dreamerv3_flax/{config["timestamp"]}_ckpt_seed_{config["SEED"]}_step_{step}"
+    checkpoint_path = f"/home/alan/Craftax_Baselines/dreamerv3-flax/{config['timestamp']}_ckpt_seed_{config['SEED']}_step_{step}"
     save_args = orbax_utils.save_args_from_target(state_dict)
     orbax_checkpointer.save(
         checkpoint_path, state_dict, save_args=save_args, force=True
@@ -116,7 +116,7 @@ def save_checkpoint(
 
 
 def delete_previous_checkpoints(step: int, currenttime: str):
-    search_pattern = f"/home/alan/Craftax_Baselines/dreamerv3_flax/{currenttime}_ckpt_seed_{config["SEED"]}_step_{step}"
+    search_pattern = f"/home/alan/Craftax_Baselines/dreamerv3-flax/{currenttime}_ckpt_seed_{config['SEED']}_step_{step}"
     list_of_files = glob.glob(search_pattern)
     if not list_of_files:  # Check if the list is empty
         print("Nothing to delete")
@@ -156,7 +156,7 @@ def load_latest_checkpoint(buffer: ReplayBuffer, agent: JAXAgent, config: Dict):
         # raise error
         raise ValueError("No checkpoint file path provided")
     else:
-        print(f"Loading checkpoint from {config["ckpt_filepath"]}")
+        print(f"Loading checkpoint from {config['ckpt_filepath']}")
         return orbax_checkpointer.restore(config["ckpt_filepath"], item=target)
 
 
@@ -212,14 +212,13 @@ def main(config):
     # Reset
     actions = envs.action_space.sample()
     obs, info = envs.reset()
-    obs, rewards, terminateds, truncateds, infos = envs.step(actions)
+    obs, rewards, terminateds, truncateds, dones, infos = envs.step(actions)
     # obs["rgb"].shape = (4, 63, 63, 3)
     # rewards.shape = (4,)
     # terminateds.shape = (4,) # episode ends natuarally
     # truncateds.shape = (4,) # episode ends due to max episode length
 
     firsts = jnp.array([True for _ in range(config["NUM_ENVS"])])
-    dones = jnp.array([False for _ in range(config["NUM_ENVS"])])
 
     # Train
     achievements = []
@@ -230,78 +229,28 @@ def main(config):
 
     # for step in tqdm(range(100000)):
     for step in range(int(1e6)):
-        # print("Step:", step)
-        # jax.debug.breakpoint()
         actions, state = agent.act(obs["rgb"], firsts, state)
         # actions = envs.action_space.sample()
-        # breakpoint()
 
         buffer.add(obs["rgb"], actions, rewards, dones, firsts)
 
         firsts = dones
 
         actions = np.argmax(actions, axis=-1)
-        obs, rewards, terminateds, truncateds, infos = envs.step(actions)
-
-        # if True in truncateds or True in terminateds, then set the corresponding element in dones to True
-        dones = jnp.array(
-            [
-                terminated or truncated
-                for terminated, truncated in zip(terminateds, truncateds)
-            ]
-        )
+        obs, rewards, terminateds, truncateds, dones, infos = envs.step(actions)
 
         # breakpoint if there any true in truncateds or terminateds
         for i, done in enumerate(dones):
             if done and config["WANDB_MODE"] == "online":
+                # print("step:", step, "firsts:", firsts, "dones:", dones)
+                # print("episode length:", infos["episode_length"])
                 wandb.log(jax.tree.map(lambda x: x[i], infos), step)
-
-        # if True in truncateds or True in terminateds:
-        #     metric = jax.tree.map(lambda x: (x * infos["returned_episode"]).sum() / infos["returned_episode"].sum(), infos)
-
-        #     if config["WANDB_MODE"] == "online":
-        #         wandb.log(metric, step)
-        # def callback(metric, update_step):
-        #     to_log = create_log_dict(metric, config)
-        #     batch_log(update_step, to_log, config)
-
-        #         # jax.debug.callback(callback, metric, step)
-        #     # report on wandb if required
-
-        # for done, info in zip(dones, infos):
-        #     # print("breakpoint zip")
-        #     # breakpoint()
-        #     if done:
-        #         rollout_metric = {
-        #             "episode_return": info["returned_episode_returns"].item(),
-        #             "episode_length": info["returned_episode_lengths"].item(),
-        #             "time_step": info["timestep"].item(),
-        #         }
-        #         # print("rollout_metric when done: ", rollout_metric)
-        #         # print("breakpoint because of done")
-        #         # breakpoint()
-        #         wandb.log(rollout_metric, step)
-        #         achievements.append(info["achievements"])
-        #         eval_metric = get_eval_metric(achievements)
-        #         # print("eval_metric when done: ", eval_metric)
-        #         wandb.log(eval_metric, step)
-
-        # Add an indented block here
-        # Example:
-        # if eval_metric["score"] > 0.8:
-        #     print("High score!")
 
         if step >= 1024 and step % 2 == 0:
             data = buffer.sample()
             _, train_metric, decoded_obs = agent.train(data)
             if step % 100 == 0 and config["WANDB_MODE"] == "online":
                 wandb.log(train_metric, step)
-                # jax.debug.callback(callback, train_metric, step)
-                # print("Step:", step, "train_metric:", train_metric)
-                # print(infos)
-                # print("breakpoint because of step % 100 == 0")
-                # breakpoint()
-                # logger.log(train_metric, step)
 
         if step % config["save_every"] == 0 and step > 0:
             if config["save_checkpoint"]:

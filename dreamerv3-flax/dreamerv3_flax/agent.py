@@ -3,6 +3,7 @@ from typing import Sequence
 
 from chex import Array, ArrayTree
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 
