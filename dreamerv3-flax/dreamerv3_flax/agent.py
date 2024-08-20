@@ -72,7 +72,7 @@ class Agent(nn.Module):
             state = self.initial_state(batch_size)
 
         # Transform the observation.
-        # obs = jnp.astype(obs, jnp.float32) / 255.0
+        obs = jnp.astype(obs, jnp.float32) / 255.0
 
         # Encode the observation.
         encoded = self.model.encoder(obs)

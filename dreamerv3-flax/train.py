@@ -93,7 +93,7 @@ def get_eval_metric(achievements: Sequence[Dict]) -> float:
 
 def main(config):
     # Seed
-    np.random.seed(0)
+    np.random.seed(config["SEED"])
 
     # Environment
     envs = CraftaxWrapper(config["NUM_ENVS"])
@@ -104,7 +104,7 @@ def main(config):
     buffer = ReplayBuffer(envs, batch_size=16, num_steps=64)
 
     # Agent
-    agent = JAXAgent(envs, seed=0)
+    agent = JAXAgent(envs, seed=config["SEED"])
     state = agent.initial_state(1)
 
     # Reset
@@ -129,6 +129,7 @@ def main(config):
     # for step in tqdm(range(100000)):
     for step in range(int(1e6)):
         # print("Step:", step)
+        # jax.debug.breakpoint()
         actions, state = agent.act(obs["rgb"], firsts, state)
         # actions = envs.action_space.sample()
         # breakpoint()
@@ -267,10 +268,7 @@ if __name__ == "__main__":
         wandb.init(
             project=config["PROJECT"],
             config=config,
-            name=config["ENV_NAME"]
-            + "-dreamer_v3_flax-"
-            + str(int(config["TOTAL_TIMESTEPS"] // 1e6))
-            + "M",
+            name="-dv3_flax-s" + str(config["SEED"]),
         )
 
     main(config)
