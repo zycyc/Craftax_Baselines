@@ -3,6 +3,10 @@ from datetime import datetime
 import subprocess
 import re
 import os
+import orbax
+import orbax.checkpoint
+import shutil
+import glob
 
 from matplotlib import pyplot as plt
 
@@ -60,6 +64,7 @@ from dreamerv3_flax.buffer import ReplayBuffer
 from dreamerv3_flax.jax_agent import JAXAgent
 
 from dreamerv3_flax.craftax import CraftaxWrapper
+from flax.training import orbax_utils
 
 
 @chex.dataclass(frozen=True)
@@ -80,15 +85,79 @@ class Transition(NamedTuple):
     info: jnp.ndarray
 
 
-def get_eval_metric(achievements: Sequence[Dict]) -> float:
-    achievements = [list(achievement.values()) for achievement in achievements]
-    success_rate = 100 * (np.array(achievements) > 0).mean(axis=0)
-    score = np.exp(np.mean(np.log(1 + success_rate))) - 1
-    eval_metric = {
-        "success_rate": {k: v for k, v in zip(TASKS, success_rate)},
-        "score": score,
+def save_checkpoint(
+    step: int,
+    agent: JAXAgent,
+    buffer: ReplayBuffer,
+    achievements: Sequence[Dict],
+    config: Dict,
+):
+    state_dict = {
+        "step": step,
+        "agent_model_state": agent.model_state,
+        "agent_policy_state": agent.policy_state,
+        "buffer": {
+            "obs": buffer.obs,
+            "actions": buffer.actions,
+            "rewards": buffer.rewards,
+            "dones": buffer.dones,
+            "firsts": buffer.firsts,
+            "pos": buffer.pos,
+            "full": buffer.full,
+        },
+        "achievements": achievements,
     }
-    return eval_metric
+
+    checkpoint_path = f"/home/alan/Craftax_Baselines/dreamerv3_flax/{config["timestamp"]}_ckpt_seed_{config["SEED"]}_step_{step}"
+    save_args = orbax_utils.save_args_from_target(state_dict)
+    orbax_checkpointer.save(
+        checkpoint_path, state_dict, save_args=save_args, force=True
+    )
+
+
+def delete_previous_checkpoints(step: int, currenttime: str):
+    search_pattern = f"/home/alan/Craftax_Baselines/dreamerv3_flax/{currenttime}_ckpt_seed_{config["SEED"]}_step_{step}"
+    list_of_files = glob.glob(search_pattern)
+    if not list_of_files:  # Check if the list is empty
+        print("Nothing to delete")
+        return False
+    else:
+        for file in list_of_files:
+            if os.path.isdir(file):
+                shutil.rmtree(file)
+                print(f"Deleted directory: {file}")
+            else:
+                os.remove(file)
+                print(f"Deleted file: {file}")
+        return True
+
+
+def load_latest_checkpoint(buffer: ReplayBuffer, agent: JAXAgent, config: Dict):
+    step = 0
+    achievements = []
+
+    buffer_dict = {
+        "obs": np.zeros_like(buffer.obs),
+        "actions": np.zeros_like(buffer.actions),
+        "rewards": np.zeros_like(buffer.rewards),
+        "dones": np.zeros_like(buffer.dones),
+        "firsts": np.zeros_like(buffer.firsts),
+        "pos": 0,
+        "full": False,
+    }
+    target = {
+        "step": step,
+        "agent_model_state": agent.model_state,
+        "agent_policy_state": agent.policy_state,
+        "buffer": buffer_dict,
+        "achievements": achievements,
+    }
+    if not config["ckpt_filepath"]:
+        # raise error
+        raise ValueError("No checkpoint file path provided")
+    else:
+        print(f"Loading checkpoint from {config["ckpt_filepath"]}")
+        return orbax_checkpointer.restore(config["ckpt_filepath"], item=target)
 
 
 def main(config):
@@ -106,6 +175,39 @@ def main(config):
     # Agent
     agent = JAXAgent(envs, seed=config["SEED"])
     state = agent.initial_state(1)
+
+    if config["ckpt_filepath"] and config["load_checkpoint"]:
+        state_restored = load_latest_checkpoint(buffer, agent, config=config)
+        if state_restored:
+            step, agent.model_state, agent.policy_state, buffer_dict, achievements = (
+                state_restored["step"],
+                state_restored["agent_model_state"],
+                state_restored["agent_policy_state"],
+                state_restored["buffer"],
+                state_restored["achievements"],
+            )
+
+            (
+                buffer.obs,
+                buffer.actions,
+                buffer.rewards,
+                buffer.dones,
+                buffer.firsts,
+                buffer.pos,
+                buffer.full,
+            ) = (
+                buffer_dict["obs"].copy(),
+                buffer_dict["actions"].copy(),
+                buffer_dict["rewards"].copy(),
+                buffer_dict["dones"].copy(),
+                buffer_dict["firsts"].copy(),
+                buffer_dict["pos"],
+                buffer_dict["full"],
+            )
+    else:
+        print("Starting from scratch")
+        step = 0
+        achievements = []
 
     # Reset
     actions = envs.action_space.sample()
@@ -201,6 +303,19 @@ def main(config):
                 # breakpoint()
                 # logger.log(train_metric, step)
 
+        if step % config["save_every"] == 0 and step > 0:
+            if config["save_checkpoint"]:
+                print(f"Step: {step}", "saving checkpoint")
+                save_checkpoint(step, agent, buffer, achievements, config)
+                print("Checkpoint saved")
+                deleted = delete_previous_checkpoints(
+                    step - config["save_every"], config["timestamp"]
+                )
+                if deleted:
+                    print("Previous checkpoints deleted")
+            else:
+                print("Not saving checkpoints, Step: ", step)
+
             # plot the decoded and sampled observations at fixed intervals
             # if step % 1000 == 0:
             #     sampled_obs = data["obs"]
@@ -262,7 +377,12 @@ if __name__ == "__main__":
         "ENTITY": "",
         "PROJECT": "dreamerv3_flax_craftax",
         "DEBUG": False,
+        "ckpt_filepath": None,
+        "load_checkpoint": False,
+        "save_checkpoint": True,
+        "save_every": 100000,
     }
+    config["timestamp"] = datetime.now().strftime("%Y%m%d-%H%M%S")
 
     if config["WANDB_MODE"] == "online":
         wandb.init(
@@ -270,5 +390,7 @@ if __name__ == "__main__":
             config=config,
             name="-dv3_flax-s" + str(config["SEED"]),
         )
+
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
 
     main(config)
