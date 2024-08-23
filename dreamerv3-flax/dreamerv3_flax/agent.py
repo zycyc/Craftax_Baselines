@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import partial
 from typing import Sequence
 
 from chex import Array, ArrayTree
@@ -91,10 +92,10 @@ class Agent(nn.Module):
         return action, state
 
     @staticmethod
-    def img_step(agent: Agent, state: ArrayTree) -> ArrayTree:
+    def img_step(agent: Agent, state: ArrayTree, sample: bool = True) -> ArrayTree:
         """Runs an imagination step."""
         # Run a RSSM imagination step.
-        prior = agent.model.rssm.img_step(*state)
+        prior = agent.model.rssm.img_step(*state, sample=sample)
 
         # Sample an action.
         latent = agent.model.rssm.get_latent(prior)
@@ -148,3 +149,50 @@ class Agent(nn.Module):
         traj = {"latent": latent, "action": action, "reward": reward, "cont": cont}
 
         return traj
+
+    def simple_imagine(
+        self, post: ArrayTree, sample: bool = False, **kwargs
+    ) -> ArrayTree:
+        """Runs a simple imagination for just latents."""
+
+        # Flatten the posterior state and continuation.
+        def flatten(x: Array) -> Array:
+            return jnp.reshape(x, (-1, *x.shape[2:]))
+
+        post = tree_map(flatten, post)
+
+        # Define the input RSSM state and continuation.
+        state_in = post
+
+        # Define the input state.
+        latent_in = self.model.rssm.get_latent(state_in)
+        action_in = self.policy.act(latent_in)
+        state_in = (state_in, action_in)
+
+        # Run an imagination step.
+        scan_fn = partial(self.img_step, sample=sample)
+        scan = nn.scan(
+            scan_fn,
+            variable_broadcast=["params", "stats"],
+            split_rngs={"params": False, "prior": True, "action": True},
+            in_axes=0,
+            out_axes=0,
+            length=self.img_horizon,
+        )
+        _, (latent, action) = scan(self, state_in)
+
+        # Calculate the reward and continuation.
+        reward = self.model.get_reward(latent)
+
+        # Concatenate the input and imagined data.
+        latent = jnp.concatenate([latent_in[None], latent], axis=0)
+        action = jnp.concatenate([action_in[None], action], axis=0)
+
+        # Define the trajectory.
+        traj = {"latent": latent, "action": action, "reward": reward}
+
+        return traj
+
+    def simple_decode(self, latent: ArrayTree) -> Array:
+        """Decodes a latent."""
+        return self.model.decoder(latent).mode()

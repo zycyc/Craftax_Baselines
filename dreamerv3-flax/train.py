@@ -222,33 +222,29 @@ def main(config):
 
     # Train
     achievements = []
-    fig1, axes1 = plt.subplots(16, 64, figsize=(64, 16))
-    fig2, axes2 = plt.subplots(16, 64, figsize=(64, 16))
-    plt.subplots_adjust(wspace=0, hspace=0)
-    # from tqdm import tqdm
 
-    # for step in tqdm(range(100000)):
-    for step in range(int(1e6)):
-        actions, state = agent.act(obs["rgb"], firsts, state)
-        # actions = envs.action_space.sample()
+    from tqdm import tqdm
+
+    for step in tqdm(range(100000)):
+        # for step in range(int(1e6)):
+        # actions, state = agent.act(obs["rgb"], firsts, state)
+        actions = envs.action_space.sample()
 
         buffer.add(obs["rgb"], actions, rewards, dones, firsts)
 
         firsts = dones
 
-        actions = np.argmax(actions, axis=-1)
+        # actions = np.argmax(actions, axis=-1)
         obs, rewards, terminateds, truncateds, dones, infos = envs.step(actions)
 
         # breakpoint if there any true in truncateds or terminateds
         for i, done in enumerate(dones):
             if done and config["WANDB_MODE"] == "online":
-                # print("step:", step, "firsts:", firsts, "dones:", dones)
-                # print("episode length:", infos["episode_length"])
                 wandb.log(jax.tree.map(lambda x: x[i], infos), step)
 
         if step >= 1024 and step % 2 == 0:
             data = buffer.sample()
-            _, train_metric, decoded_obs = agent.train(data)
+            _, train_metric = agent.train(data)
             if step % 100 == 0 and config["WANDB_MODE"] == "online":
                 wandb.log(train_metric, step)
 
@@ -264,36 +260,6 @@ def main(config):
                     print("Previous checkpoints deleted")
             else:
                 print("Not saving checkpoints, Step: ", step)
-
-            # plot the decoded and sampled observations at fixed intervals
-            # if step % 1000 == 0:
-            #     sampled_obs = data["obs"]
-            #     mse_values = jnp.square(decoded_obs - sampled_obs).sum(
-            #         axis=(2, 3, 4)
-            #     )  # Average over h, w, c dimensions
-
-            #     # Calculate average MSE for the first column
-            #     avg_mse_first_col = jnp.mean(
-            #         mse_values[:, 0]
-            #     )  # Average over the first column
-            #     # Calculate average MSE for the remaining columns
-            #     avg_mse_rest_cols = jnp.mean(mse_values[:, 1:])
-            #     decoded_obs = (decoded_obs - jnp.min(decoded_obs)) / (
-            #         jnp.max(decoded_obs) - jnp.min(decoded_obs)
-            #     )
-            #     # decoded_obs = decoded_obs
-            #     for row in range(16):
-            #         for col in range(64):
-            #             axes1[row, col].imshow(decoded_obs[row, col])
-            #             axes1[row, col].axis("off")
-            #             axes2[row, col].imshow(sampled_obs[row, col])
-            #             axes2[row, col].axis("off")
-            #     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            #     fig1.savefig(f"decoded_obs_tmp.png")  # Save the other figure
-            #     fig2.savefig(f"sampled_obs_tmp.png")  # Save the other figure
-            #     print("step:", step, "sample & decoded obs saved")
-            #     print(f"Avg MSE for first column: {avg_mse_first_col}")
-            #     print(f"Avg MSE for the rest of the columns: {avg_mse_rest_cols}")
 
 
 if __name__ == "__main__":
@@ -322,13 +288,13 @@ if __name__ == "__main__":
         # "ENV_NAME": "Craftax-Classic-Symbolic-v1",
         "SEED": 0,
         "NUM_SEEDS": 1,
-        "WANDB_MODE": "online",  # set to online to activate wandb
+        "WANDB_MODE": "false",  # set to online to activate wandb
         "ENTITY": "",
         "PROJECT": "dreamerv3_flax_craftax",
         "DEBUG": False,
         "ckpt_filepath": None,
         "load_checkpoint": False,
-        "save_checkpoint": True,
+        "save_checkpoint": False,
         "save_every": 100000,
     }
     config["timestamp"] = datetime.now().strftime("%Y%m%d-%H%M%S")

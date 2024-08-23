@@ -143,7 +143,9 @@ class RSSM(nn.Module):
 
         return deter
 
-    def img_step(self, state: ArrayTree, action: Array) -> ArrayTree:
+    def img_step(
+        self, state: ArrayTree, action: Array, sample: bool = True
+    ) -> ArrayTree:
         """Runs an imagination step."""
         # Get the deterministic and stochastic representations.
         deter = state["deter"]
@@ -168,7 +170,10 @@ class RSSM(nn.Module):
         # Sample a stochastic representation.
         dist = self.get_dist(logit)
         seed = self.make_rng("prior")
-        stoch = dist.sample(seed=seed)
+        if sample:
+            stoch = dist.sample(seed=seed)
+        else:
+            stoch = dist.mode()
 
         # Cast the stochastic representation to float16.
         stoch = jnp.astype(stoch, jnp.float16)
