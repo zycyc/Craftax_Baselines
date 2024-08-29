@@ -170,7 +170,9 @@ def main(config):
     # env = VecCrafterEnv(AsyncVectorEnv(env_fns))
 
     # Buffer
-    buffer = ReplayBuffer(envs, batch_size=16, num_steps=64)
+    buffer = ReplayBuffer(
+        envs, batch_size=16, num_steps=64, buffer_size=config["BUFFER_SIZE"]
+    )
 
     # Agent
     agent = JAXAgent(envs, seed=config["SEED"])
@@ -223,12 +225,15 @@ def main(config):
     # Train
     achievements = []
 
-    from tqdm import tqdm
+    # from tqdm import tqdm
 
-    for step in tqdm(range(100000)):
-        # for step in range(int(1e6)):
+    # for step in tqdm(range(1, 1000001)):
+    for step in range(1, 1000001):
         # actions, state = agent.act(obs["rgb"], firsts, state)
-        actions = envs.action_space.sample()
+        # actions = envs.action_space.sample()
+
+        # generate a numpy array randomly sample from int 1, 2, 3, 4 (left, right, up, down)
+        actions = np.random.randint(1, 5, size=(config["NUM_ENVS"],))
 
         buffer.add(obs["rgb"], actions, rewards, dones, firsts)
 
@@ -271,7 +276,8 @@ if __name__ == "__main__":
     config = {
         "NUM_ENVS": int(1),
         "NUM_REPEATS": int(1),
-        "BUFFER_SIZE": int(1e6),
+        # "BUFFER_SIZE": int(1e6),
+        "BUFFER_SIZE": int(5e5),
         "BUFFER_BATCH_SIZE": int(128),
         "TOTAL_TIMESTEPS": 5e5,
         "EPSILON_START": 1.0,
@@ -288,13 +294,13 @@ if __name__ == "__main__":
         # "ENV_NAME": "Craftax-Classic-Symbolic-v1",
         "SEED": 0,
         "NUM_SEEDS": 1,
-        "WANDB_MODE": "false",  # set to online to activate wandb
+        "WANDB_MODE": "online",  # set to online to activate wandb
         "ENTITY": "",
         "PROJECT": "dreamerv3_flax_craftax",
         "DEBUG": False,
         "ckpt_filepath": None,
         "load_checkpoint": False,
-        "save_checkpoint": False,
+        "save_checkpoint": True,
         "save_every": 100000,
     }
     config["timestamp"] = datetime.now().strftime("%Y%m%d-%H%M%S")
